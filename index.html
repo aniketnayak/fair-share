@@ -20,6 +20,12 @@
       <button class="mode-btn active" data-mode="classic">Fair Share</button>
       <button class="mode-btn" data-mode="random">Random Ratio</button>
     </div>
+    <div id="slice-selector">
+      <button class="slice-btn active" data-slices="2">2</button>
+      <button class="slice-btn" data-slices="3">3</button>
+      <button class="slice-btn" data-slices="4">4</button>
+      <button class="slice-btn" data-slices="5">5</button>
+    </div>
     <div id="home-buttons">
       <button id="btn-single-player">Single Player</button>
       <button id="btn-versus">Versus</button>
@@ -117,6 +123,7 @@
   </div>
 
   <div id="hud" class="hidden">
+    <div id="cut-progress" class="hidden">Cut <span id="cut-current">1</span> / <span id="cut-total">2</span></div>
     <div id="target-hud" class="hidden">Target: <span id="target-ratio">30 / 70</span></div>
     <div id="timer">30.0</div>
     <div id="hints">
@@ -134,6 +141,7 @@
       <div id="score-grade"></div>
       <div id="score-value"></div>
       <div id="score-detail"></div>
+      <div id="score-slices" class="hidden"></div>
       <button id="play-again-btn">Play Again</button>
     </div>
   </div>

@@ -12,6 +12,7 @@ const playAgainBtn = document.getElementById('play-again-btn');
 const weighLabels = document.getElementById('weigh-labels');
 const weighLeft = document.getElementById('weigh-left');
 const weighRight = document.getElementById('weigh-right');
+const scoreSlices = document.getElementById('score-slices');
 
 export function showHomeScreen() {
   homeScreen.classList.remove('hidden');
@@ -67,6 +68,7 @@ export function showScorePanel({ grade, score, pctA, pctB }) {
   scoreGrade.style.color = gradeColors[grade] || '#fff';
   scoreValue.textContent = `Score: ${score}`;
   scoreDetail.textContent = `${pctA}% / ${pctB}%`;
+  scoreSlices.classList.add('hidden');
   scorePanel.classList.remove('hidden');
 }
 
@@ -97,6 +99,75 @@ export function hideWeighLabels() {
 
 export function onPlayAgain(callback) {
   playAgainBtn.addEventListener('click', callback);
+}
+
+// ── Slice Selector ────────────────────────────────────────────────
+
+const sliceBtns = document.querySelectorAll('.slice-btn');
+
+export function onSliceSelect(callback) {
+  sliceBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      const count = parseInt(btn.dataset.slices, 10);
+      sliceBtns.forEach(b => b.classList.toggle('active', b === btn));
+      callback(count);
+    });
+  });
+}
+
+/**
+ * Lock slice selector to 2 only (for Random Ratio), or unlock all.
+ */
+export function setSliceSelectorLocked(locked) {
+  sliceBtns.forEach(btn => {
+    const count = parseInt(btn.dataset.slices, 10);
+    if (count > 2) {
+      btn.disabled = locked;
+      btn.classList.toggle('disabled', locked);
+    }
+  });
+  // If locking, force selection to 2
+  if (locked) {
+    sliceBtns.forEach(b => b.classList.toggle('active', b.dataset.slices === '2'));
+  }
+}
+
+// ── Cut Progress HUD ──────────────────────────────────────────────
+
+const cutProgress = document.getElementById('cut-progress');
+const cutCurrent = document.getElementById('cut-current');
+const cutTotal = document.getElementById('cut-total');
+
+export function showCutProgress(current, total) {
+  cutCurrent.textContent = current;
+  cutTotal.textContent = total;
+  cutProgress.classList.remove('hidden');
+}
+
+export function hideCutProgress() {
+  cutProgress.classList.add('hidden');
+}
+
+// ── Multi-slice score panel ───────────────────────────────────────
+
+export function showMultiScorePanel({ grade, score, pcts }) {
+  const gradeColorsLocal = {
+    'PERFECT!': '#ffd700',
+    S: '#ff6bff',
+    A: '#00e676',
+    B: '#64b5f6',
+    C: '#ffee58',
+    D: '#ffa726',
+    F: '#ef5350',
+  };
+
+  scoreGrade.textContent = grade;
+  scoreGrade.style.color = gradeColorsLocal[grade] || '#fff';
+  scoreValue.textContent = `Score: ${score}`;
+  scoreDetail.textContent = pcts.map(p => `${p}%`).join(' / ');
+  scoreSlices.classList.add('hidden');
+  scorePanel.classList.remove('hidden');
 }
 
 // ── Mode Selector & Target HUD ────────────────────────────────────
@@ -213,7 +284,10 @@ const waitingScoreText = document.getElementById('waiting-score-text');
 
 export function showWaitingForScore(scoreData) {
   if (scoreData) {
-    waitingScoreText.textContent = `Score: ${scoreData.score} (${scoreData.grade}) — ${scoreData.pctA}% / ${scoreData.pctB}%`;
+    const detail = scoreData.pcts
+      ? scoreData.pcts.map(p => `${p}%`).join(' / ')
+      : `${scoreData.pctA}% / ${scoreData.pctB}%`;
+    waitingScoreText.textContent = `Score: ${scoreData.score} (${scoreData.grade}) — ${detail}`;
   }
   waitingScoreBanner.classList.remove('hidden');
 }
@@ -232,13 +306,19 @@ export function showRoundResult(round, myScore, oppScore, totalRounds) {
   myGradeEl.textContent = myScore.grade;
   myGradeEl.style.color = gradeColors[myScore.grade] || '#fff';
   document.getElementById('rr-my-score').textContent = myScore.score;
-  document.getElementById('rr-my-detail').textContent = `${myScore.pctA}% / ${myScore.pctB}%`;
+  const myDetail = myScore.pcts
+    ? myScore.pcts.map(p => `${p}%`).join(' / ')
+    : `${myScore.pctA}% / ${myScore.pctB}%`;
+  document.getElementById('rr-my-detail').textContent = myDetail;
 
   const oppGradeEl = document.getElementById('rr-opp-grade');
   oppGradeEl.textContent = oppScore.grade;
   oppGradeEl.style.color = gradeColors[oppScore.grade] || '#fff';
   document.getElementById('rr-opp-score').textContent = oppScore.score;
-  document.getElementById('rr-opp-detail').textContent = `${oppScore.pctA}% / ${oppScore.pctB}%`;
+  const oppDetail = oppScore.pcts
+    ? oppScore.pcts.map(p => `${p}%`).join(' / ')
+    : `${oppScore.pctA}% / ${oppScore.pctB}%`;
+  document.getElementById('rr-opp-detail').textContent = oppDetail;
 
   const winnerEl = document.getElementById('round-winner');
   winnerEl.className = 'round-winner';

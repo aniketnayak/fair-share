@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildScales, tiltScales } from './scales.js';
+import { buildScales, tiltScales, buildMultiScales } from './scales.js';
 
 // ── Easing helpers ──────────────────────────────────────────────────────
 
@@ -200,4 +200,163 @@ export async function animateCinematic(
   await wait(700);
 
   return scales;
+}
+
+// ── Multi-slice helpers ──────────────────────────────────────────────
+
+function easeInQuad(t) {
+  return t * t;
+}
+
+const TABLE_SURFACE_Y = -1.2 + 0.75 + 0.03;
+
+/**
+ * Intermediate cut animation: split apart, smaller piece drops to table.
+ * Larger piece stays in place (camera doesn't move).
+ */
+export async function animateIntermediateCut(largerMesh, smallerMesh, planeNormal) {
+  const dir = planeNormal.clone().normalize();
+
+  // Phase 1: Split halves apart (300ms)
+  const startL = largerMesh.position.clone();
+  const startS = smallerMesh.position.clone();
+  const splitL = startL.clone().add(dir.clone().multiplyScalar(0.15));
+  const splitS = startS.clone().add(dir.clone().multiplyScalar(-0.15));
+
+  await tween(300, raw => {
+    const t = easeOutCubic(raw);
+    largerMesh.position.lerpVectors(startL, splitL, t);
+    smallerMesh.position.lerpVectors(startS, splitS, t);
+  });
+
+  // Phase 2: Smaller piece drops to table (500ms)
+  const dropStart = smallerMesh.position.clone();
+  const dropEnd = new THREE.Vector3(
+    dropStart.x + (Math.random() - 0.5) * 0.1,  // slight x drift
+    TABLE_SURFACE_Y + 0.1,
+    dropStart.z + (Math.random() - 0.5) * 0.1   // slight z drift
+  );
+  const startQuatS = smallerMesh.quaternion.clone();
+  const tumbleQuat = startQuatS.clone().multiply(
+    new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(Math.random() - 0.5, 0.2, Math.random() - 0.5).normalize(),
+      0.4
+    )
+  );
+
+  await tween(500, raw => {
+    // Gravity-like: accelerate down, then bounce at landing
+    const fallT = Math.min(raw * 1.4, 1);  // reach bottom at ~70% of duration
+    const t = fallT < 1 ? easeInQuad(fallT) : 1;
+    const bounceT = raw > 0.7 ? easeOutBounce((raw - 0.7) / 0.3) : 1;
+
+    smallerMesh.position.lerpVectors(dropStart, dropEnd, t);
+    // Small upward bounce after landing
+    if (raw > 0.7) {
+      smallerMesh.position.y += (1 - bounceT) * 0.04;
+    }
+    smallerMesh.quaternion.slerpQuaternions(startQuatS, tumbleQuat, easeOutCubic(raw));
+  });
+  smallerMesh.position.copy(dropEnd);
+}
+
+/**
+ * Final multi-slice cinematic: all N pieces arc onto N individual platform scales.
+ * Returns Promise resolving with { multiScales }.
+ */
+export async function animateMultiCinematic(allPieces, camera, orbit, scene) {
+  const count = allPieces.length;
+
+  // Phase 1: Camera swoop to front-on overview (500ms)
+  const camStart = camera.position.clone();
+  const targetStart = orbit.target.clone();
+  const camEnd = new THREE.Vector3(0, 1.8, 4.5);
+  const camTargetEnd = new THREE.Vector3(0, 0.5, 0);
+
+  await tween(500, raw => {
+    const t = easeInOutCubic(raw);
+    camera.position.lerpVectors(camStart, camEnd, t);
+    orbit.target.lerpVectors(targetStart, camTargetEnd, t);
+    camera.lookAt(orbit.target);
+  });
+
+  // Phase 2: N individual scale platforms pop in (700ms)
+  const multiScales = buildMultiScales(count);
+  multiScales.group.position.set(0, TABLE_SURFACE_Y, 0);
+  multiScales.group.scale.setScalar(0);
+  scene.add(multiScales.group);
+
+  await tween(700, raw => {
+    const scaleUp = easeOutBounce(Math.min(raw * 1.5, 1));
+    multiScales.group.scale.setScalar(scaleUp);
+  });
+  multiScales.group.scale.setScalar(1);
+
+  // Phase 3: Each piece arcs to its scale platform (900ms + stagger)
+  const spacing = 2.8 / count;
+  const startX = -(count - 1) * spacing / 2;
+  const DISH_Y = TABLE_SURFACE_Y + 0.06 + 0.25 + 0.02;
+
+  // Compute each piece's geometry center so we can center it on the dish
+  const landingPositions = allPieces.map((piece, i) => {
+    piece.mesh.geometry.computeBoundingBox();
+    const bb = piece.mesh.geometry.boundingBox;
+    const geoCenter = new THREE.Vector3();
+    bb.getCenter(geoCenter);
+    // geoCenter is in local space — apply mesh scale to get world offset
+    geoCenter.multiply(piece.mesh.scale);
+    const halfHeight = (bb.max.y - bb.min.y) * piece.mesh.scale.y * 0.5;
+
+    return new THREE.Vector3(
+      startX + i * spacing - geoCenter.x,
+      DISH_Y + halfHeight,
+      -geoCenter.z
+    );
+  });
+
+  const arcPromises = allPieces.map((piece, i) => {
+    return new Promise(resolve => {
+      const delay = i * 100;
+      setTimeout(async () => {
+        const arcStart = piece.mesh.position.clone();
+        const arcEnd = landingPositions[i];
+        const startQuat = piece.mesh.quaternion.clone();
+        const endQuat = new THREE.Quaternion(); // upright
+
+        await tween(900, raw => {
+          const t = easeInOutCubic(raw);
+          piece.mesh.position.lerpVectors(arcStart, arcEnd, t);
+          piece.mesh.position.y += 0.3 * 4 * t * (1 - t);
+          piece.mesh.quaternion.slerpQuaternions(startQuat, endQuat, t);
+        });
+        piece.mesh.position.copy(arcEnd);
+        resolve();
+      }, delay);
+    });
+  });
+  await Promise.all(arcPromises);
+
+  await wait(200);
+
+  // Phase 4: Scale platforms sink proportionally to weight (600ms)
+  const volumes = allPieces.map(p => p.volume);
+  const maxVol = Math.max(...volumes);
+  const sinkAmounts = volumes.map(v => (v / maxVol) * 0.08);
+
+  const originalDishYs = multiScales.platforms.map(p => p.dish.position.y);
+  const originalPieceYs = allPieces.map(p => p.mesh.position.y);
+
+  await tween(600, raw => {
+    const t = easeOutBounce(raw);
+    for (let i = 0; i < count; i++) {
+      const sink = sinkAmounts[i] * t;
+      multiScales.platforms[i].dish.position.y = originalDishYs[i] - sink;
+      allPieces[i].mesh.position.y = originalPieceYs[i] - sink;
+    }
+  });
+
+  // Phase 5: Hold (500ms)
+  await wait(500);
+
+  return { multiScales };
 }

@@ -6,8 +6,8 @@ import { createCuttingPlane, getWorldPlane } from './cuttingPlane.js';
 import { setupControls } from './controls.js';
 import { sliceMesh } from './slicer.js';
 import { computeVolume } from './volume.js';
-import { computeScoreWithTarget } from './scoring.js';
-import { animateCinematic } from './animation.js';
+import { computeScoreWithTarget, computeMultiSliceScore } from './scoring.js';
+import { animateCinematic, animateIntermediateCut, animateMultiCinematic } from './animation.js';
 import { Timer } from './timer.js';
 import {
   updateTimer,
@@ -24,6 +24,12 @@ import {
   onPlayAgain,
   onSinglePlayer,
   onExit,
+  // Slice selector & cut progress
+  onSliceSelect,
+  setSliceSelectorLocked,
+  showCutProgress,
+  hideCutProgress,
+  showMultiScorePanel,
   // Mode & Target
   onModeSelect,
   showTargetHud,
@@ -66,6 +72,7 @@ import {
   getCurrentRound,
   getTotalRounds,
   setVersusSplitMode,
+  setVersusSliceCount,
 } from './versus.js';
 
 // --- State ---
@@ -75,6 +82,14 @@ let gameMode = 'single'; // 'single' or 'versus'
 let splitMode = 'classic'; // 'classic' or 'random'
 let targetRatio = 50;
 const TARGET_POOL = [10, 20, 25, 30, 40, 50];
+
+// Multi-slice state
+let sliceCount = 2;        // 2 (classic), 3, 4, or 5
+let cutsRemaining = 0;
+let cutsMade = 0;
+let activePiece = null;    // current mesh being cut (starts as whole food)
+let fallenPieces = [];     // array of { mesh, volume } already cut off
+let currentMultiScales = null;
 
 // --- Scene setup ---
 const canvas = document.getElementById('game-canvas');
@@ -97,7 +112,7 @@ const timer = new Timer({
 });
 
 // --- Init ---
-function startRound(seed = null, target = null) {
+function startRound(seed = null, target = null, slices = null) {
   // Cleanup previous round
   if (potato) scene.remove(potato);
   halves.forEach((h) => scene.remove(h));
@@ -116,6 +131,17 @@ function startRound(seed = null, target = null) {
     scene.remove(currentScales.group);
     currentScales = null;
   }
+  if (currentMultiScales) {
+    scene.remove(currentMultiScales.group);
+    currentMultiScales = null;
+  }
+  // Cleanup multi-slice fallen pieces
+  fallenPieces.forEach(fp => scene.remove(fp.mesh));
+  fallenPieces = [];
+  if (activePiece && activePiece !== potato) {
+    scene.remove(activePiece);
+  }
+  activePiece = null;
 
   // New potato — use provided seed (versus) or random (solo)
   const potatoSeed = seed !== null ? seed : Math.random();
@@ -188,6 +214,18 @@ function startRound(seed = null, target = null) {
     hideTargetHud();
   }
 
+  // Multi-slice setup
+  const effectiveSliceCount = slices !== null ? slices : sliceCount;
+  cutsRemaining = effectiveSliceCount - 1;
+  cutsMade = 0;
+  activePiece = potato;
+
+  if (effectiveSliceCount > 2) {
+    showCutProgress(1, cutsRemaining);
+  } else {
+    hideCutProgress();
+  }
+
   timer.start();
 }
 
@@ -212,22 +250,34 @@ async function performCut() {
   // Get the world-space plane
   const worldPlane = getWorldPlane(cuttingPlane);
 
-  // Transform plane into potato's local space
-  potato.updateMatrixWorld(true);
-  const invMatrix = new THREE.Matrix4().copy(potato.matrixWorld).invert();
+  // Transform plane into activePiece's local space
+  activePiece.updateMatrixWorld(true);
+  const invMatrix = new THREE.Matrix4().copy(activePiece.matrixWorld).invert();
   const localPlane = worldPlane.clone().applyMatrix4(invMatrix);
 
   // Slice
-  const result = sliceMesh(potato.geometry, localPlane);
+  const result = sliceMesh(activePiece.geometry, localPlane);
 
   if (!result) {
-    console.warn('Cut missed the potato!');
+    console.warn('Cut missed the food!');
+    if (cutsRemaining > 1) {
+      // Intermediate miss: just skip this cut and let player try again
+      state = State.PLAYING;
+      showCutButton(true);
+      showHints(true);
+      controls.orbit.enabled = true;
+      controls.transform.attach(cuttingPlane);
+      controls.transform.getHelper().visible = true;
+      timer.start();
+      return;
+    }
     const missedScore = { grade: 'F', score: 0, pctA: '100.0', pctB: '0.0' };
     if (gameMode === 'versus') {
       reportScore(missedScore);
     } else {
       showScorePanel(missedScore);
     }
+    hideCutProgress();
     state = State.SCORED;
     controls.orbit.enabled = true;
     return;
@@ -236,14 +286,13 @@ async function performCut() {
   // Compute volumes
   const volFront = computeVolume(result.front);
   const volBack = computeVolume(result.back);
-  const volOriginal = computeVolume(potato.geometry);
 
   console.log(
-    `Volume check: front=${volFront.toFixed(4)} + back=${volBack.toFixed(4)} = ${(volFront + volBack).toFixed(4)}, original=${volOriginal.toFixed(4)}`
+    `Volume check: front=${volFront.toFixed(4)} + back=${volBack.toFixed(4)} = ${(volFront + volBack).toFixed(4)}`
   );
 
   // Create half meshes
-  const material = potato.material.clone();
+  const material = activePiece.material.clone();
   const frontMesh = new THREE.Mesh(result.front, material);
   const backMesh = new THREE.Mesh(result.back, material.clone());
   frontMesh.castShadow = true;
@@ -251,48 +300,140 @@ async function performCut() {
   backMesh.castShadow = true;
   backMesh.receiveShadow = true;
 
-  // Copy potato's world transform (includes the 0.45 scale)
-  frontMesh.position.copy(potato.position);
-  frontMesh.quaternion.copy(potato.quaternion);
-  frontMesh.scale.copy(potato.scale);
-  backMesh.position.copy(potato.position);
-  backMesh.quaternion.copy(potato.quaternion);
-  backMesh.scale.copy(potato.scale);
+  // Copy activePiece's world transform
+  frontMesh.position.copy(activePiece.position);
+  frontMesh.quaternion.copy(activePiece.quaternion);
+  frontMesh.scale.copy(activePiece.scale);
+  backMesh.position.copy(activePiece.position);
+  backMesh.quaternion.copy(activePiece.quaternion);
+  backMesh.scale.copy(activePiece.scale);
 
-  // Remove original potato and plane
-  scene.remove(potato);
+  // Remove active piece and cutting plane
+  scene.remove(activePiece);
   scene.remove(cuttingPlane);
 
   scene.add(frontMesh);
   scene.add(backMesh);
-  halves = [frontMesh, backMesh];
 
-  // Run cinematic sequence (returns scales object)
   const planeNormal = worldPlane.normal.clone();
-  currentScales = await animateCinematic(
-    frontMesh,
-    backMesh,
-    planeNormal,
-    camera,
-    controls.orbit,
-    scene,
-    volFront,
-    volBack
-  );
 
-  // Show weigh percentages, then score
-  const { score, grade, pctA, pctB } = computeScoreWithTarget(volFront, volBack, targetRatio);
-  showWeighLabels(pctA, pctB);
+  // ── Branch A: Intermediate cut (more cuts remaining) ──────────
+  if (cutsRemaining > 1) {
+    // Determine larger/smaller
+    let largerMesh, smallerMesh, largerVol, smallerVol;
+    if (volFront >= volBack) {
+      largerMesh = frontMesh; smallerMesh = backMesh;
+      largerVol = volFront; smallerVol = volBack;
+    } else {
+      largerMesh = backMesh; smallerMesh = frontMesh;
+      largerVol = volBack; smallerVol = volFront;
+    }
 
-  await new Promise(r => setTimeout(r, 900));
+    // Park the smaller piece
+    fallenPieces.push({ mesh: smallerMesh, volume: smallerVol });
 
-  hideWeighLabels();
+    await animateIntermediateCut(largerMesh, smallerMesh, planeNormal);
 
-  if (gameMode === 'versus') {
-    // Send score to opponent, don't show solo score panel
-    reportScore({ score, grade, pctA, pctB });
+    // Update state for next cut
+    activePiece = largerMesh;
+    cutsRemaining--;
+    cutsMade++;
+    halves = [largerMesh];
+
+    // Re-create cutting plane at the larger piece's current position
+    cuttingPlane = createCuttingPlane();
+    cuttingPlane.position.copy(largerMesh.position);
+    cuttingPlane.rotation.set(
+      (Math.random() - 0.5) * 1.0,
+      (Math.random() - 0.5) * 1.0,
+      0
+    );
+    scene.add(cuttingPlane);
+
+    // Re-attach controls
+    controls.transform.attach(cuttingPlane);
+    controls.transform.getHelper().visible = true;
+    controls.orbit.enabled = true;
+    scene.add(controls.transform.getHelper());
+
+    // Update UI — only timer resets, camera stays
+    showCutProgress(cutsMade + 1, cutsMade + cutsRemaining);
+    showCutButton(true);
+    showHints(true);
+
+    timer.start();
+    state = State.PLAYING;
+    return;
+  }
+
+  // ── Branch B: Final cut ───────────────────────────────────────
+  halves = [frontMesh, backMesh];
+  hideCutProgress();
+
+  const isMultiSlice = fallenPieces.length > 0;
+
+  if (!isMultiSlice) {
+    // Classic 2-piece cinematic
+    currentScales = await animateCinematic(
+      frontMesh,
+      backMesh,
+      planeNormal,
+      camera,
+      controls.orbit,
+      scene,
+      volFront,
+      volBack
+    );
+
+    const { score, grade, pctA, pctB } = computeScoreWithTarget(volFront, volBack, targetRatio);
+    showWeighLabels(pctA, pctB);
+
+    await new Promise(r => setTimeout(r, 900));
+    hideWeighLabels();
+
+    if (gameMode === 'versus') {
+      reportScore({ score, grade, pctA, pctB });
+    } else {
+      showScorePanel({ grade, score, pctA, pctB });
+    }
   } else {
-    showScorePanel({ grade, score, pctA, pctB });
+    // Multi-slice final cut: drop the smaller piece, then all go to scales
+    let lastLarger, lastSmaller, lastLargerVol, lastSmallerVol;
+    if (volFront >= volBack) {
+      lastLarger = frontMesh; lastSmaller = backMesh;
+      lastLargerVol = volFront; lastSmallerVol = volBack;
+    } else {
+      lastLarger = backMesh; lastSmaller = frontMesh;
+      lastLargerVol = volBack; lastSmallerVol = volFront;
+    }
+
+    // Drop the smaller piece to the table first
+    await animateIntermediateCut(lastLarger, lastSmaller, planeNormal);
+
+    // Gather all pieces for scales
+    const allPieces = [
+      ...fallenPieces,
+      { mesh: lastSmaller, volume: lastSmallerVol },
+      { mesh: lastLarger, volume: lastLargerVol },
+    ];
+
+    const { multiScales } = await animateMultiCinematic(
+      allPieces,
+      camera,
+      controls.orbit,
+      scene
+    );
+    currentMultiScales = multiScales;
+
+    // Compute multi-slice score
+    const allVolumes = allPieces.map(p => p.volume);
+    const { score, grade, pcts } = computeMultiSliceScore(allVolumes);
+
+    if (gameMode === 'versus') {
+      reportScore({ score, grade, pcts });
+    } else {
+      showMultiScorePanel({ grade, score, pcts });
+    }
   }
 
   state = State.SCORED;
@@ -320,6 +461,17 @@ function goToMenu() {
     scene.remove(currentScales.group);
     currentScales = null;
   }
+  if (currentMultiScales) {
+    scene.remove(currentMultiScales.group);
+    currentMultiScales = null;
+  }
+  // Cleanup multi-slice fallen pieces
+  fallenPieces.forEach(fp => scene.remove(fp.mesh));
+  fallenPieces = [];
+  if (activePiece && activePiece !== potato) {
+    scene.remove(activePiece);
+  }
+  activePiece = null;
 
   // Cleanup versus if needed
   if (gameMode === 'versus') {
@@ -339,6 +491,7 @@ function goToMenu() {
   hideScorePanel();
   hideWeighLabels();
   hideTargetHud();
+  hideCutProgress();
   hideAllVersusScreens();
 }
 
@@ -347,11 +500,11 @@ setVersusCallbacks({
   matchStart: () => {
     hideWaiting();
   },
-  roundStart: (round, seed, target) => {
+  roundStart: (round, seed, target, slices) => {
     hideRoundResult();
     hideMatchResult();
     hideWaitingForScore();
-    startRound(seed, target);
+    startRound(seed, target, slices);
   },
   opponentScored: (round, myScore, oppScore) => {
     hideWaitingForScore();
@@ -381,7 +534,14 @@ setVersusCallbacks({
 });
 
 // --- Event bindings (solo) ---
-onModeSelect(mode => { splitMode = mode; setVersusSplitMode(mode); });
+onSliceSelect(count => { sliceCount = count; setVersusSliceCount(count); });
+onModeSelect(mode => {
+  splitMode = mode;
+  setVersusSplitMode(mode);
+  const locked = mode === 'random';
+  setSliceSelectorLocked(locked);
+  if (locked) sliceCount = 2;
+});
 onCut(() => performCut());
 onPlayAgain(() => startRound());
 onSinglePlayer(() => startRound());
@@ -441,14 +601,15 @@ function updateIntersectionLine() {
     intersectionLine.geometry.dispose();
     intersectionLine = null;
   }
-  if (state !== State.PLAYING || !potato || !cuttingPlane) return;
+  const piece = activePiece || potato;
+  if (state !== State.PLAYING || !piece || !cuttingPlane) return;
 
   const worldPlane = getWorldPlane(cuttingPlane);
-  potato.updateMatrixWorld(true);
-  const invMatrix = new THREE.Matrix4().copy(potato.matrixWorld).invert();
+  piece.updateMatrixWorld(true);
+  const invMatrix = new THREE.Matrix4().copy(piece.matrixWorld).invert();
   const localPlane = worldPlane.clone().applyMatrix4(invMatrix);
 
-  const positions = potato.geometry.getAttribute('position');
+  const positions = piece.geometry.getAttribute('position');
   const triCount = positions.count / 3;
   const pts = [];
 
@@ -464,7 +625,7 @@ function updateIntersectionLine() {
       if ((dists[i] > 0 && dists[j] < 0) || (dists[i] < 0 && dists[j] > 0)) {
         const tt = dists[i] / (dists[i] - dists[j]);
         const pt = new THREE.Vector3().lerpVectors(verts[i], verts[j], tt);
-        pt.applyMatrix4(potato.matrixWorld);
+        pt.applyMatrix4(piece.matrixWorld);
         pts.push(pt);
       }
     }

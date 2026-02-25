@@ -125,9 +125,14 @@ function handleOpponentLeft() {
 
 const TARGET_POOL = [10, 20, 25, 30, 40, 50];
 let versusSplitMode = 'classic';
+let versusSliceCount = 2;
 
 export function setVersusSplitMode(mode) {
   versusSplitMode = mode;
+}
+
+export function setVersusSliceCount(count) {
+  versusSliceCount = count;
 }
 
 function startNextRound() {
@@ -138,19 +143,20 @@ function startNextRound() {
   const target = versusSplitMode === 'random'
     ? TARGET_POOL[Math.floor(Math.random() * TARGET_POOL.length)]
     : null;
+  const slices = versusSliceCount;
 
   if (getIsHost()) {
-    sendSeed(currentRound, seed, target);
+    sendSeed(currentRound, seed, target, slices);
   }
 
-  if (onRoundStart) onRoundStart(currentRound, seed, target);
+  if (onRoundStart) onRoundStart(currentRound, seed, target, slices);
 }
 
 function handleSeed(data) {
   if (!getIsHost()) {
     currentRound = data.round;
     waitingForScore = false;
-    if (onRoundStart) onRoundStart(data.round, data.seed, data.target || null);
+    if (onRoundStart) onRoundStart(data.round, data.seed, data.target || null, data.slices || 2);
   }
 }
 
@@ -169,12 +175,18 @@ export function reportScore(scoreData) {
 
 function handleOpponentScore(data) {
   clearOpponentTimeout();
-  opponentScores.push({
+  const scoreEntry = {
     score: data.score,
     grade: data.grade,
-    pctA: data.pctA,
-    pctB: data.pctB,
-  });
+  };
+  // Support both 2-piece (pctA/pctB) and multi-slice (pcts array)
+  if (data.pcts) {
+    scoreEntry.pcts = data.pcts;
+  } else {
+    scoreEntry.pctA = data.pctA;
+    scoreEntry.pctB = data.pctB;
+  }
+  opponentScores.push(scoreEntry);
 
   if (myScores.length >= currentRound) {
     showRoundResult();

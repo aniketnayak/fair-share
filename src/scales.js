@@ -114,6 +114,86 @@ function buildPan(panMat, rimMat, chainLen) {
 }
 
 /**
+ * Build N individual platform scales arranged in a row for multi-slice mode.
+ * Returns { group, platforms: [{ group, base, post, dish }] }
+ */
+export function buildMultiScales(count) {
+  const group = new THREE.Group();
+
+  const darkBrassMat = new THREE.MeshStandardMaterial({
+    color: 0x8a7030,
+    roughness: 0.4,
+    metalness: 0.7,
+  });
+  const brassMat = new THREE.MeshStandardMaterial({
+    color: 0xc0a050,
+    roughness: 0.3,
+    metalness: 0.8,
+  });
+  const goldMat = new THREE.MeshStandardMaterial({
+    color: 0xd4b050,
+    roughness: 0.35,
+    metalness: 0.75,
+  });
+  const rimMat = new THREE.MeshStandardMaterial({
+    color: 0x8a7030,
+    roughness: 0.4,
+    metalness: 0.7,
+  });
+
+  const spacing = 2.8 / count;
+  const startX = -(count - 1) * spacing / 2;
+
+  const platforms = [];
+
+  for (let i = 0; i < count; i++) {
+    const platGroup = new THREE.Group();
+    platGroup.position.x = startX + i * spacing;
+
+    // Base
+    const baseGeo = new THREE.CylinderGeometry(0.22, 0.25, 0.06, 12);
+    const base = new THREE.Mesh(baseGeo, darkBrassMat);
+    base.position.y = 0.03;
+    base.castShadow = true;
+    platGroup.add(base);
+
+    // Post
+    const postGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.25, 6);
+    const post = new THREE.Mesh(postGeo, brassMat);
+    post.position.y = 0.06 + 0.125;
+    post.castShadow = true;
+    platGroup.add(post);
+
+    // Dish (platform on top)
+    const dishGeo = new THREE.CylinderGeometry(0.30, 0.28, 0.04, 12);
+    const dish = new THREE.Mesh(dishGeo, goldMat);
+    dish.position.y = 0.06 + 0.25 + 0.02;
+    dish.castShadow = true;
+    dish.receiveShadow = true;
+    platGroup.add(dish);
+
+    // Rim
+    const rimGeo = new THREE.TorusGeometry(0.29, 0.015, 6, 16);
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = dish.position.y + 0.01;
+    platGroup.add(rim);
+
+    group.add(platGroup);
+    platforms.push({ group: platGroup, base, post, dish });
+  }
+
+  return { group, platforms };
+}
+
+/**
+ * Sink a platform dish down by a given amount (weight visual).
+ */
+export function sinkPlatform(platform, amount) {
+  platform.dish.position.y -= amount;
+}
+
+/**
  * Position the scale pans + beam based on a tilt amount.
  * tilt: -1 (left heavy) to +1 (right heavy). 0 = balanced.
  */

@@ -36,7 +36,7 @@ export function computeScoreWithTarget(volumeA, volumeB, targetSmallPct) {
   return { score, grade, ratio, pctA, pctB };
 }
 
-function scoreToGrade(score) {
+export function scoreToGrade(score) {
   if (score >= 99) return 'PERFECT!';
   if (score >= 95) return 'S';
   if (score >= 90) return 'A';
@@ -44,4 +44,21 @@ function scoreToGrade(score) {
   if (score >= 70) return 'C';
   if (score >= 60) return 'D';
   return 'F';
+}
+
+/**
+ * Compute score for N pieces (multi-slice mode).
+ * Uses min/max ratio with sqrt curve, same as 2-piece.
+ */
+export function computeMultiSliceScore(volumes) {
+  const min = Math.min(...volumes);
+  const max = Math.max(...volumes);
+  const ratio = max > 0 ? min / max : 0;
+  const score = Math.round(Math.sqrt(ratio) * 100);
+  const grade = scoreToGrade(score);
+
+  const total = volumes.reduce((a, b) => a + b, 0);
+  const pcts = volumes.map(v => ((v / total) * 100).toFixed(1));
+
+  return { score, grade, ratio, pcts };
 }
