@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fair Share</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <!-- Home Screen -->
+  <div id="home-screen">
+    <div id="home-title">
+      <span class="title-fair">Fair</span>
+      <span class="title-share">Share</span>
+    </div>
+    <div id="home-subtitle">Split the potato. Keep it fair.</div>
+    <div id="home-buttons">
+      <button id="btn-single-player">Single Player</button>
+      <button id="btn-versus">Versus</button>
+    </div>
+  </div>
+
+  <!-- Lobby Screen -->
+  <div id="lobby-screen" class="hidden">
+    <div class="overlay-panel">
+      <h2 class="panel-title">Versus Mode</h2>
+      <div id="lobby-buttons">
+        <button id="btn-create-room">Create Room</button>
+        <div class="lobby-divider">or</div>
+        <div id="join-form">
+          <input id="room-code-input" type="text" maxlength="4" placeholder="ABCD" autocomplete="off" spellcheck="false" />
+          <button id="btn-join-room">Join</button>
+        </div>
+      </div>
+      <button id="btn-lobby-back" class="btn-back">Back</button>
+    </div>
+  </div>
+
+  <!-- Waiting Room -->
+  <div id="waiting-screen" class="hidden">
+    <div class="overlay-panel">
+      <h2 class="panel-title">Waiting for Opponent</h2>
+      <div id="room-code-display"></div>
+      <div id="waiting-hint">Share this code with your friend</div>
+      <div class="spinner"></div>
+      <button id="btn-waiting-cancel" class="btn-back">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Versus HUD (round counter shown during play) -->
+  <div id="versus-hud" class="hidden">
+    <div id="round-counter">Round 1 / 3</div>
+  </div>
+
+  <!-- Waiting for opponent score (non-blocking banner) -->
+  <div id="waiting-score-banner" class="hidden">
+    <span id="waiting-score-text">Score: 92 (A) &mdash; 48.2% / 51.8%</span>
+    <div class="banner-divider"></div>
+    <div class="spinner small-spinner"></div>
+    <span>Waiting for opponent...</span>
+  </div>
+
+  <!-- Round Result -->
+  <div id="round-result-screen" class="hidden">
+    <div class="overlay-panel">
+      <h2 id="round-result-title" class="panel-title">Round 1 Result</h2>
+      <div class="score-comparison">
+        <div class="score-col you">
+          <div class="score-col-label">You</div>
+          <div class="score-col-grade" id="rr-my-grade"></div>
+          <div class="score-col-score" id="rr-my-score"></div>
+          <div class="score-col-detail" id="rr-my-detail"></div>
+        </div>
+        <div class="score-vs">vs</div>
+        <div class="score-col opp">
+          <div class="score-col-label">Opponent</div>
+          <div class="score-col-grade" id="rr-opp-grade"></div>
+          <div class="score-col-score" id="rr-opp-score"></div>
+          <div class="score-col-detail" id="rr-opp-detail"></div>
+        </div>
+      </div>
+      <div id="round-winner" class="round-winner"></div>
+      <div id="round-countdown" class="round-countdown">Next round in 5...</div>
+    </div>
+  </div>
+
+  <!-- Match Result -->
+  <div id="match-result-screen" class="hidden">
+    <div class="overlay-panel wide">
+      <h2 id="match-outcome" class="match-outcome"></h2>
+      <div id="match-rounds-summary"></div>
+      <div class="match-averages">
+        <span id="match-my-avg"></span>
+        <span class="avg-vs">vs</span>
+        <span id="match-opp-avg"></span>
+      </div>
+      <div id="match-buttons">
+        <button id="btn-rematch" class="btn-gold">Rematch</button>
+        <button id="btn-match-menu" class="btn-back">Back to Menu</button>
+      </div>
+      <div id="rematch-status" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- Disconnect Overlay -->
+  <div id="disconnect-screen" class="hidden">
+    <div class="overlay-panel small">
+      <h2 class="panel-title">Opponent Disconnected</h2>
+      <button id="btn-disconnect-menu" class="btn-gold">Back to Menu</button>
+    </div>
+  </div>
+
+  <div id="hud" class="hidden">
+    <div id="timer">30.0</div>
+    <div id="hints">
+      <div>Drag gizmo to move plane</div>
+      <div>R = rotate mode</div>
+      <div>T = translate mode</div>
+    </div>
+    <button id="cut-btn">CUT!</button>
+    <button id="exit-btn" class="hidden">Exit</button>
+    <div id="weigh-labels" class="hidden">
+      <div id="weigh-left" class="weigh-label"></div>
+      <div id="weigh-right" class="weigh-label"></div>
+    </div>
+    <div id="score-panel" class="hidden">
+      <div id="score-grade"></div>
+      <div id="score-value"></div>
+      <div id="score-detail"></div>
+      <button id="play-again-btn">Play Again</button>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
