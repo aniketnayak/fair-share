@@ -107,9 +107,9 @@ function subscribeToChannel(code) {
   });
 }
 
-export function sendSeed(round, seed) {
+export function sendSeed(round, seed, target) {
   if (!channel) return;
-  channel.trigger('client-seed', { round, seed, userId: myUserId });
+  channel.trigger('client-seed', { round, seed, target, userId: myUserId });
 }
 
 export function sendScore(round, scoreData) {

@@ -12,15 +12,12 @@ export function mulberry32(seed) {
   };
 }
 
-export function generatePotato(seed = Math.random()) {
-  const prng = mulberry32(seed * 2147483647);
-  const noise3D = createNoise3D(prng);
-
+export function generatePotatoFromPrng(prng, noise3D) {
   const geo = new THREE.IcosahedronGeometry(1.0, 6);
   geo.deleteAttribute('uv');
   const posAttr = geo.getAttribute('position');
 
-  // Shape variety — pick a body type then add randomness
+  // Shape variety — pick a body type
   const shapeRoll = prng();
   const scales = [1, 1, 1];
   const elongAxis = Math.floor(prng() * 3);
@@ -44,13 +41,18 @@ export function generatePotato(seed = Math.random()) {
     scales[elongAxis] = 1.3 + prng() * 0.4;
     for (const a of otherAxes) scales[a] = 0.65 + prng() * 0.2;
   } else {
-    // Chunky & lopsided (two axes similar, one slightly longer)
+    // Chunky & lopsided
     scales[elongAxis] = 1.1 + prng() * 0.3;
     scales[otherAxes[0]] = 0.7 + prng() * 0.3;
     scales[otherAxes[1]] = 0.9 + prng() * 0.2;
   }
 
-  // Broad body lumps — gentle rolling bumps that shape the overall form
+  // --- Taper: one end fat, the other end thin ---
+  const taperAxis = Math.floor(prng() * 3);
+  const taperDir = prng() < 0.5 ? 1 : -1;
+  const taperStrength = 0.25 + prng() * 0.35;
+
+  // Broad body lumps
   const lumpCount = 5 + Math.floor(prng() * 3);
   const lumps = [];
   for (let i = 0; i < lumpCount; i++) {
@@ -67,24 +69,24 @@ export function generatePotato(seed = Math.random()) {
     });
   }
 
-  // Asymmetric bulges — one-sided bumps that shift the center of mass
-  const bulgeCount = 1 + Math.floor(prng() * 2);
-  const bulges = [];
-  for (let i = 0; i < bulgeCount; i++) {
+  // Big asymmetric lobes
+  const lobeCount = 1 + Math.floor(prng() * 2);
+  const lobes = [];
+  for (let i = 0; i < lobeCount; i++) {
     const theta = prng() * Math.PI * 2;
     const phi = Math.acos(2 * prng() - 1);
-    bulges.push({
+    lobes.push({
       dir: new THREE.Vector3(
         Math.sin(phi) * Math.cos(theta),
         Math.sin(phi) * Math.sin(theta),
         Math.cos(phi)
       ),
-      strength: 0.15 + prng() * 0.20,
-      falloff: 1.5 + prng() * 1.5,
+      strength: 0.25 + prng() * 0.30,
+      falloff: 1.2 + prng() * 1.0,
     });
   }
 
-  // Small "eye" knobs — those tight little potato bumps
+  // Small "eye" knobs
   const knobCount = 6 + Math.floor(prng() * 6);
   const knobs = [];
   for (let i = 0; i < knobCount; i++) {
@@ -101,7 +103,7 @@ export function generatePotato(seed = Math.random()) {
     });
   }
 
-  // fBm simplex noise — very low frequency for smooth organic waviness
+  // fBm simplex noise
   const octaves = 2;
   const baseFreq = 0.8;
   const persistence = 0.4;
@@ -112,11 +114,27 @@ export function generatePotato(seed = Math.random()) {
     let y = posAttr.getY(i);
     let z = posAttr.getZ(i);
 
+    // Apply base elongation
     x *= scales[0];
     y *= scales[1];
     z *= scales[2];
 
+    // --- Apply taper ---
+    const coords = [x, y, z];
+    const axisVal = coords[taperAxis];
+    const t = (axisVal * taperDir + 1) / 2;
+    const taperScale = 1.0 - taperStrength * Math.pow(Math.max(0, t), 1.5);
+    for (const a of [0, 1, 2]) {
+      if (a !== taperAxis) {
+        coords[a] *= Math.max(0.3, taperScale);
+      }
+    }
+    x = coords[0];
+    y = coords[1];
+    z = coords[2];
+
     const len = Math.sqrt(x * x + y * y + z * z);
+    if (len < 0.001) { posAttr.setXYZ(i, x, y, z); continue; }
     const nx = x / len;
     const ny = y / len;
     const nz = z / len;
@@ -129,20 +147,20 @@ export function generatePotato(seed = Math.random()) {
       lumpDisp += lump.strength * Math.pow(influence, lump.falloff);
     }
 
-    // Small knobby bumps (potato eyes)
+    // Big asymmetric lobes
+    let lobeDisp = 0;
+    for (const lobe of lobes) {
+      const dot = nx * lobe.dir.x + ny * lobe.dir.y + nz * lobe.dir.z;
+      const influence = Math.max(0, dot);
+      lobeDisp += lobe.strength * Math.pow(influence, lobe.falloff);
+    }
+
+    // Small knobby bumps
     let knobDisp = 0;
     for (const knob of knobs) {
       const dot = nx * knob.dir.x + ny * knob.dir.y + nz * knob.dir.z;
       const influence = Math.max(0, dot);
       knobDisp += knob.strength * Math.pow(influence, knob.falloff);
-    }
-
-    // Asymmetric bulges — push one side out more
-    let bulgeDisp = 0;
-    for (const bulge of bulges) {
-      const dot = nx * bulge.dir.x + ny * bulge.dir.y + nz * bulge.dir.z;
-      const influence = Math.max(0, dot);
-      bulgeDisp += bulge.strength * Math.pow(influence, bulge.falloff);
     }
 
     // fBm noise
@@ -158,7 +176,7 @@ export function generatePotato(seed = Math.random()) {
     }
     noiseVal /= maxAmp;
 
-    const disp = lumpDisp + knobDisp + bulgeDisp + noiseVal * strength;
+    const disp = lumpDisp + lobeDisp + knobDisp + noiseVal * strength;
     x += nx * disp;
     y += ny * disp;
     z += nz * disp;
@@ -176,6 +194,13 @@ export function generatePotato(seed = Math.random()) {
 
   const mesh = new THREE.Mesh(geo, material);
   mesh.name = 'potato';
+  return mesh;
+}
+
+export function generatePotato(seed = Math.random()) {
+  const prng = mulberry32(seed * 2147483647);
+  const noise3D = createNoise3D(prng);
+  const mesh = generatePotatoFromPrng(prng, noise3D);
   mesh.scale.setScalar(0.25);
   return mesh;
 }

@@ -15,7 +15,11 @@
       <span class="title-fair">Fair</span>
       <span class="title-share">Share</span>
     </div>
-    <div id="home-subtitle">Split the potato. Keep it fair.</div>
+    <div id="home-subtitle">Split it fair.</div>
+    <div id="mode-selector">
+      <button class="mode-btn active" data-mode="classic">Fair Share</button>
+      <button class="mode-btn" data-mode="random">Random Ratio</button>
+    </div>
     <div id="home-buttons">
       <button id="btn-single-player">Single Player</button>
       <button id="btn-versus">Versus</button>
@@ -113,6 +117,7 @@
   </div>
 
   <div id="hud" class="hidden">
+    <div id="target-hud" class="hidden">Target: <span id="target-ratio">30 / 70</span></div>
     <div id="timer">30.0</div>
     <div id="hints">
       <div>Drag gizmo to move plane</div>

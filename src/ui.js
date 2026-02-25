@@ -99,6 +99,38 @@ export function onPlayAgain(callback) {
   playAgainBtn.addEventListener('click', callback);
 }
 
+// ── Mode Selector & Target HUD ────────────────────────────────────
+
+const targetHud = document.getElementById('target-hud');
+const targetRatioEl = document.getElementById('target-ratio');
+const modeBtns = document.querySelectorAll('.mode-btn');
+
+export function onModeSelect(callback) {
+  modeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      setActiveMode(mode);
+      callback(mode);
+    });
+  });
+}
+
+export function setActiveMode(mode) {
+  modeBtns.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+}
+
+export function showTargetHud(smallPct, belowRound = false) {
+  targetRatioEl.textContent = `${smallPct} / ${100 - smallPct}`;
+  targetHud.classList.remove('hidden');
+  targetHud.classList.toggle('below-round', belowRound);
+}
+
+export function hideTargetHud() {
+  targetHud.classList.add('hidden');
+}
+
 // ── Versus UI ──────────────────────────────────────────────────────
 
 const lobbyScreen = document.getElementById('lobby-screen');

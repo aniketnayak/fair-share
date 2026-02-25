@@ -2,25 +2,46 @@
  * Compute score and grade from two volumes.
  */
 export function computeScore(volumeA, volumeB) {
+  return computeScoreWithTarget(volumeA, volumeB, 50);
+}
+
+/**
+ * Compute score and grade for a target split ratio.
+ * @param {number} targetSmallPct - The target smaller-side percentage (10, 20, 25, 30, 40, or 50)
+ */
+export function computeScoreWithTarget(volumeA, volumeB, targetSmallPct) {
   const total = volumeA + volumeB;
-  const smaller = Math.min(volumeA, volumeB);
-  const larger = Math.max(volumeA, volumeB);
-  const ratio = larger > 0 ? smaller / larger : 0; // 0..1
-
-  // Generous curve: sqrt to reward near-equal cuts
-  const score = Math.round(Math.pow(ratio, 0.5) * 100);
-
-  let grade;
-  if (score >= 99) grade = 'PERFECT!';
-  else if (score >= 95) grade = 'S';
-  else if (score >= 90) grade = 'A';
-  else if (score >= 80) grade = 'B';
-  else if (score >= 70) grade = 'C';
-  else if (score >= 60) grade = 'D';
-  else grade = 'F';
-
   const pctA = ((volumeA / total) * 100).toFixed(1);
   const pctB = ((volumeB / total) * 100).toFixed(1);
 
+  if (targetSmallPct === 50) {
+    // Original 50/50 formula: ratio of smaller/larger, sqrt curve
+    const smaller = Math.min(volumeA, volumeB);
+    const larger = Math.max(volumeA, volumeB);
+    const ratio = larger > 0 ? smaller / larger : 0;
+    const score = Math.round(Math.pow(ratio, 0.5) * 100);
+    const grade = scoreToGrade(score);
+    return { score, grade, ratio, pctA, pctB };
+  }
+
+  // Target mode: measure closeness to the target split
+  const actualSmallPct = Math.min(volumeA, volumeB) / total; // 0 to 0.5
+  const targetFrac = targetSmallPct / 100;                    // e.g., 0.3 for 30/70
+  const error = Math.abs(actualSmallPct - targetFrac);        // 0 to ~0.5
+  const rawScore = Math.max(0, 1 - error / 0.25);            // 0 at 25pp error, 1 at perfect
+  const score = Math.round(Math.pow(rawScore, 0.5) * 100);   // generous sqrt curve
+  const ratio = total > 0 ? Math.min(volumeA, volumeB) / Math.max(volumeA, volumeB) : 0;
+  const grade = scoreToGrade(score);
+
   return { score, grade, ratio, pctA, pctB };
+}
+
+function scoreToGrade(score) {
+  if (score >= 99) return 'PERFECT!';
+  if (score >= 95) return 'S';
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 70) return 'C';
+  if (score >= 60) return 'D';
+  return 'F';
 }

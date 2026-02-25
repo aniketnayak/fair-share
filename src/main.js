@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
-import { generatePotato, mulberry32 } from './potato.js';
+import { mulberry32 } from './potato.js';
+import { generateFood } from './foods.js';
 import { createCuttingPlane, getWorldPlane } from './cuttingPlane.js';
 import { setupControls } from './controls.js';
 import { sliceMesh } from './slicer.js';
 import { computeVolume } from './volume.js';
-import { computeScore } from './scoring.js';
+import { computeScoreWithTarget } from './scoring.js';
 import { animateCinematic } from './animation.js';
 import { Timer } from './timer.js';
 import {
@@ -23,6 +24,10 @@ import {
   onPlayAgain,
   onSinglePlayer,
   onExit,
+  // Mode & Target
+  onModeSelect,
+  showTargetHud,
+  hideTargetHud,
   // Versus UI
   showLobby,
   hideLobby,
@@ -60,12 +65,16 @@ import {
   setVersusCallbacks,
   getCurrentRound,
   getTotalRounds,
+  setVersusSplitMode,
 } from './versus.js';
 
 // --- State ---
 const State = { MENU: -1, PLAYING: 0, CUTTING: 1, SCORED: 2 };
 let state = State.MENU;
 let gameMode = 'single'; // 'single' or 'versus'
+let splitMode = 'classic'; // 'classic' or 'random'
+let targetRatio = 50;
+const TARGET_POOL = [10, 20, 25, 30, 40, 50];
 
 // --- Scene setup ---
 const canvas = document.getElementById('game-canvas');
@@ -88,7 +97,7 @@ const timer = new Timer({
 });
 
 // --- Init ---
-function startRound(seed = null) {
+function startRound(seed = null, target = null) {
   // Cleanup previous round
   if (potato) scene.remove(potato);
   halves.forEach((h) => scene.remove(h));
@@ -110,9 +119,18 @@ function startRound(seed = null) {
 
   // New potato — use provided seed (versus) or random (solo)
   const potatoSeed = seed !== null ? seed : Math.random();
-  potato = generatePotato(potatoSeed);
+  potato = generateFood(potatoSeed);
   // Seeded RNG for layout (same in versus for both players)
   const rng = mulberry32((potatoSeed * 2147483647 + 7919) | 0);
+
+  // Pick target ratio
+  if (target !== null) {
+    targetRatio = target;
+  } else if (splitMode === 'random') {
+    targetRatio = TARGET_POOL[Math.floor(rng() * TARGET_POOL.length)];
+  } else {
+    targetRatio = 50;
+  }
 
   // Potato gets a significant offset from center — forces the player to translate
   const offsetAngle = rng() * Math.PI * 2;
@@ -162,6 +180,12 @@ function startRound(seed = null) {
 
   if (gameMode === 'versus') {
     showVersusHud(getCurrentRound(), getTotalRounds());
+  }
+
+  if (splitMode === 'random' || targetRatio !== 50) {
+    showTargetHud(targetRatio, gameMode === 'versus');
+  } else {
+    hideTargetHud();
   }
 
   timer.start();
@@ -257,7 +281,7 @@ async function performCut() {
   );
 
   // Show weigh percentages, then score
-  const { score, grade, pctA, pctB } = computeScore(volFront, volBack);
+  const { score, grade, pctA, pctB } = computeScoreWithTarget(volFront, volBack, targetRatio);
   showWeighLabels(pctA, pctB);
 
   await new Promise(r => setTimeout(r, 900));
@@ -314,6 +338,7 @@ function goToMenu() {
   showExitButton(false);
   hideScorePanel();
   hideWeighLabels();
+  hideTargetHud();
   hideAllVersusScreens();
 }
 
@@ -322,11 +347,11 @@ setVersusCallbacks({
   matchStart: () => {
     hideWaiting();
   },
-  roundStart: (round, seed) => {
+  roundStart: (round, seed, target) => {
     hideRoundResult();
     hideMatchResult();
     hideWaitingForScore();
-    startRound(seed);
+    startRound(seed, target);
   },
   opponentScored: (round, myScore, oppScore) => {
     hideWaitingForScore();
@@ -356,6 +381,7 @@ setVersusCallbacks({
 });
 
 // --- Event bindings (solo) ---
+onModeSelect(mode => { splitMode = mode; setVersusSplitMode(mode); });
 onCut(() => performCut());
 onPlayAgain(() => startRound());
 onSinglePlayer(() => startRound());

@@ -123,24 +123,34 @@ function handleOpponentLeft() {
   if (onDisconnect) onDisconnect();
 }
 
+const TARGET_POOL = [10, 20, 25, 30, 40, 50];
+let versusSplitMode = 'classic';
+
+export function setVersusSplitMode(mode) {
+  versusSplitMode = mode;
+}
+
 function startNextRound() {
   currentRound++;
   waitingForScore = false;
 
   const seed = Math.random() * 2147483647;
+  const target = versusSplitMode === 'random'
+    ? TARGET_POOL[Math.floor(Math.random() * TARGET_POOL.length)]
+    : null;
 
   if (getIsHost()) {
-    sendSeed(currentRound, seed);
+    sendSeed(currentRound, seed, target);
   }
 
-  if (onRoundStart) onRoundStart(currentRound, seed);
+  if (onRoundStart) onRoundStart(currentRound, seed, target);
 }
 
 function handleSeed(data) {
   if (!getIsHost()) {
     currentRound = data.round;
     waitingForScore = false;
-    if (onRoundStart) onRoundStart(data.round, data.seed);
+    if (onRoundStart) onRoundStart(data.round, data.seed, data.target || null);
   }
 }
 
