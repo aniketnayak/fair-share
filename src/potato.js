@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createNoise3D } from 'simplex-noise';
 
 // Simple seeded PRNG (mulberry32)
-function mulberry32(seed) {
+export function mulberry32(seed) {
   let s = seed | 0;
   return function () {
     s = (s + 0x6d2b79f5) | 0;
@@ -67,6 +67,23 @@ export function generatePotato(seed = Math.random()) {
     });
   }
 
+  // Asymmetric bulges — one-sided bumps that shift the center of mass
+  const bulgeCount = 1 + Math.floor(prng() * 2);
+  const bulges = [];
+  for (let i = 0; i < bulgeCount; i++) {
+    const theta = prng() * Math.PI * 2;
+    const phi = Math.acos(2 * prng() - 1);
+    bulges.push({
+      dir: new THREE.Vector3(
+        Math.sin(phi) * Math.cos(theta),
+        Math.sin(phi) * Math.sin(theta),
+        Math.cos(phi)
+      ),
+      strength: 0.15 + prng() * 0.20,
+      falloff: 1.5 + prng() * 1.5,
+    });
+  }
+
   // Small "eye" knobs — those tight little potato bumps
   const knobCount = 6 + Math.floor(prng() * 6);
   const knobs = [];
@@ -120,6 +137,14 @@ export function generatePotato(seed = Math.random()) {
       knobDisp += knob.strength * Math.pow(influence, knob.falloff);
     }
 
+    // Asymmetric bulges — push one side out more
+    let bulgeDisp = 0;
+    for (const bulge of bulges) {
+      const dot = nx * bulge.dir.x + ny * bulge.dir.y + nz * bulge.dir.z;
+      const influence = Math.max(0, dot);
+      bulgeDisp += bulge.strength * Math.pow(influence, bulge.falloff);
+    }
+
     // fBm noise
     let amp = 1;
     let freq = baseFreq;
@@ -133,7 +158,7 @@ export function generatePotato(seed = Math.random()) {
     }
     noiseVal /= maxAmp;
 
-    const disp = lumpDisp + knobDisp + noiseVal * strength;
+    const disp = lumpDisp + knobDisp + bulgeDisp + noiseVal * strength;
     x += nx * disp;
     y += ny * disp;
     z += nz * disp;

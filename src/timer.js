@@ -2,7 +2,7 @@
  * 30-second countdown timer using requestAnimationFrame.
  */
 export class Timer {
-  constructor({ onTick, onExpire, duration = 30 }) {
+  constructor({ onTick, onExpire, duration = 10 }) {
     this.duration = duration;
     this.remaining = duration;
     this.running = false;

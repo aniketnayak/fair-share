@@ -203,7 +203,7 @@ function computeMatchResult() {
   const oppAvg = opponentScores.reduce((sum, s) => sum + s.score, 0) / opponentScores.length;
 
   let outcome;
-  if (Math.abs(myAvg - oppAvg) < 0.5) outcome = 'tie';
+  if (myAvg === oppAvg) outcome = 'tie';
   else if (myAvg > oppAvg) outcome = 'win';
   else outcome = 'lose';
 

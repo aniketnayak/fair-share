@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
-import { generatePotato } from './potato.js';
+import { generatePotato, mulberry32 } from './potato.js';
 import { createCuttingPlane, getWorldPlane } from './cuttingPlane.js';
 import { setupControls } from './controls.js';
 import { sliceMesh } from './slicer.js';
@@ -111,14 +111,34 @@ function startRound(seed = null) {
   // New potato — use provided seed (versus) or random (solo)
   const potatoSeed = seed !== null ? seed : Math.random();
   potato = generatePotato(potatoSeed);
-  potato.position.set(0, 0.8, 0);
+  // Seeded RNG for layout (same in versus for both players)
+  const rng = mulberry32((potatoSeed * 2147483647 + 7919) | 0);
+
+  // Potato gets a significant offset from center — forces the player to translate
+  const offsetAngle = rng() * Math.PI * 2;
+  const offsetDist = 0.08 + rng() * 0.14; // 0.08–0.22 units from center
+  potato.position.set(
+    Math.cos(offsetAngle) * offsetDist,
+    0.8,
+    Math.sin(offsetAngle) * offsetDist * 0.6
+  );
   potato.castShadow = true;
   potato.receiveShadow = true;
+  potato.rotation.set(
+    rng() * Math.PI * 2,
+    rng() * Math.PI * 2,
+    rng() * Math.PI * 2
+  );
   scene.add(potato);
 
-  // Cutting plane starts at potato center
+  // Cutting plane stays at scene center with a random tilt — clearly not at the potato
   cuttingPlane = createCuttingPlane();
-  cuttingPlane.position.copy(potato.position);
+  cuttingPlane.position.set(0, 0.8, 0);
+  cuttingPlane.rotation.set(
+    (rng() - 0.5) * 1.0,
+    (rng() - 0.5) * 1.0,
+    0
+  );
   scene.add(cuttingPlane);
 
   // Reset camera — eye-level with the potato
